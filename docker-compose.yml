@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  neurofusion:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./screenshots:/app/screenshots
+      - ./config.json:/app/config.json
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped
+    devices:
+      - "/dev/snd:/dev/snd"  # For audio input/output
+    privileged: true  # Required for some system commands
+
+  # Optional Redis service for session management
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
