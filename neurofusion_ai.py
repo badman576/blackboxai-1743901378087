@@ -144,8 +144,55 @@ class CommandProcessor:
         
         return 'unknown', command
 
-class VoiceAssistant:
+class AutonomousSystem:
     def __init__(self):
+        self.health_check_interval = 3600  # 1 hour
+        self.self_improvement_interval = 86400  # 1 day
+        self.start_autonomous_threads()
+
+    def start_autonomous_threads(self):
+        """Start background threads for autonomous operation"""
+        threading.Thread(target=self._monitor_system_health, daemon=True).start()
+        threading.Thread(target=self._self_improvement_loop, daemon=True).start()
+
+    def _monitor_system_health(self):
+        """Continuously monitor system health"""
+        while True:
+            try:
+                self.check_system_health()
+            except Exception as e:
+                logger.error(f"Health monitoring error: {str(e)}")
+            time.sleep(self.health_check_interval)
+
+    def check_system_health(self):
+        """Check if core components are functioning"""
+        try:
+            subprocess.run(["python3", "-c", "import flask, psutil"], check=True)
+            return True
+        except subprocess.CalledProcessError:
+            logger.warning("System health check failed")
+            return False
+
+    def _self_improvement_loop(self):
+        """Continuously improve the system"""
+        while True:
+            try:
+                self.update_dependencies()
+            except Exception as e:
+                logger.error(f"Self-improvement error: {str(e)}")
+            time.sleep(self.self_improvement_interval)
+
+    def update_dependencies(self):
+        """Update system dependencies"""
+        try:
+            subprocess.run(["pip", "install", "--upgrade", "-r", "requirements.txt"], check=True)
+            logger.info("Dependencies updated successfully")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Dependency update failed: {str(e)}")
+
+class VoiceAssistant(AutonomousSystem):
+    def __init__(self):
+        super().__init__()
         self.recognizer = sr.Recognizer()
         try:
             self.microphone = sr.Microphone()
@@ -268,11 +315,45 @@ class VoiceAssistant:
         elif command == 'shutdown':
             if platform.system() == "Windows":
                 os.system("shutdown /s /t 30")
+            elif platform.system() == "Linux":
+                os.system("shutdown -h +0.5")
             return "Shutting down in 30 seconds"
         elif command == 'restart':
             if platform.system() == "Windows":
                 os.system("shutdown /r /t 30")
+            elif platform.system() == "Linux":
+                os.system("shutdown -r +0.5")
             return "Restarting in 30 seconds"
+        elif command.startswith('run '):
+            try:
+                cmd = command[4:]
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                return f"Command executed:\n{result.stdout or 'No output'}\n{result.stderr or ''}"
+            except Exception as e:
+                return f"Error executing command: {str(e)}"
+        elif command == 'list processes':
+            try:
+                processes = []
+                for proc in psutil.process_iter(['pid', 'name', 'username']):
+                    processes.append(f"{proc.info['pid']} {proc.info['name']} {proc.info['username']}")
+                return "Running processes:\n" + "\n".join(processes[:20])
+            except Exception as e:
+                return f"Error listing processes: {str(e)}"
+        elif command == 'system monitor':
+            try:
+                cpu = psutil.cpu_percent(interval=1)
+                mem = psutil.virtual_memory()
+                disk = psutil.disk_usage('/')
+                net = psutil.net_io_counters()
+                return (
+                    f"System Monitor:\n"
+                    f"CPU: {cpu}%\n"
+                    f"Memory: {mem.percent}% used\n"
+                    f"Disk: {disk.percent}% used\n"
+                    f"Network: ↑{net.bytes_sent//1024}KB ↓{net.bytes_recv//1024}KB"
+                )
+            except Exception as e:
+                return f"Error getting system info: {str(e)}"
         return "Unknown system command"
 
     def _play_youtube(self, query: str) -> str:
