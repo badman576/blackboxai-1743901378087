@@ -17,10 +17,12 @@ try:
     import pyautogui
     GUI_AVAILABLE = True
 except (ImportError, KeyError):
-    GUI_AVAILABLE = False
     import warnings
     warnings.warn("GUI functions disabled - running in headless environment")
+    pyautogui = None
+    GUI_AVAILABLE = False
 import psutil
+import pyttsx3
 import speech_recognition as sr
 from typing import Optional, Dict, List, Deque, Tuple, Any
 from collections import deque
@@ -204,7 +206,15 @@ class VoiceAssistant(AutonomousSystem):
         self.command_history = deque(maxlen=10)
         self.running = True
         self.load_config()
-        
+        self.tts_engine = pyttsx3.init()
+        self.tts_engine.setProperty('rate', 180)  # Speed (default ~200)
+        self.tts_engine.setProperty('volume', 1.0)  # Max volume
+        voices = self.tts_engine.getProperty('voices')
+
+        # Set female voice (you can change to male if you want)
+        female_voice = voices[1]  # 0 for male, 1 for female on most systems
+        self.tts_engine.setProperty('voice', female_voice.id)
+     
     def load_config(self):
         try:
             with open(CONFIG_FILE) as f:
@@ -218,6 +228,7 @@ class VoiceAssistant(AutonomousSystem):
                 json.dump(self.config, f)
     
     def listen(self) -> Optional[str]:
+        self.mute_tts = True  # Mute TTS while listening
         try:
             with self.microphone as source:
                 logger.info("Adjusting for ambient noise...")
@@ -234,6 +245,9 @@ class VoiceAssistant(AutonomousSystem):
         except Exception as e:
             logger.error(f"Voice recognition error: {e}")
             return None
+        finally:
+            self.mute_tts = False  # Unmute after listening
+
 
     def execute_command(self, command: str) -> str:
         if not command or len(command) > MAX_COMMAND_LENGTH:
@@ -275,6 +289,10 @@ class VoiceAssistant(AutonomousSystem):
                 return f"Today is {datetime.datetime.now().strftime('%A, %B %d, %Y')}"
             else:
                 return f"I don't understand: {command}"
+                self.speak(result)  
+                return result
+                self.play_typing_sound()  # Simulates typing sound
+                self.speak(response)  
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             return f"Error executing command: {str(e)}"
@@ -291,8 +309,42 @@ class VoiceAssistant(AutonomousSystem):
                 return f"Couldn't open {param}: {str(e)}"
 
     def _handle_search(self, query: str) -> str:
-        webbrowser.open(f"https://google.com/search?q={query}")
-        return f"Searching for {query}"
+        url = self._resolve_known_site(query)
+
+        if url:
+            webbrowser.open(url)
+            return f"Opening {url}"
+    
+        # Fallback: do a Google search
+        try:
+            search_url = f"https://www.google.com/search?q={query}"
+            webbrowser.open(search_url)
+            return f"Searching for '{query}'"
+        except Exception as e:
+            return f"Couldn't complete search: {str(e)}"
+
+
+    def _resolve_known_site(self, query: str) -> Optional[str]:
+        known_sites = {
+            "youtube": "https://www.youtube.com",
+            "google": "https://www.google.com",
+            "github": "https://github.com",
+            "gmail": "https://mail.google.com",
+            "facebook": "https://www.facebook.com",
+            "twitter": "https://www.twitter.com",
+            "reddit": "https://www.reddit.com",
+            "netflix": "https://www.netflix.com",
+            "amazon": "https://www.amazon.com"
+        }
+
+        query = query.lower().strip()
+    
+        for keyword, url in known_sites.items():
+            if any(phrase in query for phrase in [f"open {keyword}", f"go to {keyword}", f"launch {keyword}"]):
+                return url
+            if query == keyword:
+                return url
+        return None
 
     def _adjust_volume(self, direction: str) -> str:
         if not GUI_AVAILABLE:
@@ -411,6 +463,28 @@ class VoiceAssistant(AutonomousSystem):
             )
         except Exception as e:
             return f"Couldn't get system info: {str(e)}"
+
+    def speak(self, text: str):
+        if self.mute_tts:
+            return  # Don't speak if muted
+        try:
+            self.tts_engine.say(text)
+            self.tts_engine.runAndWait()
+        except Exception as e:
+            logger.warning(f"TTS failed: {e}")
+
+    import pyautogui
+    import time
+
+    def play_typing_sound(self):
+        # Simulate typing sound if GUI is available
+        if not GUI_AVAILABLE or pyautogui is None:
+            return
+        pyautogui.press('shift')
+        time.sleep(0.1)
+        pyautogui.press('a')
+        pyautogui.press('shift')
+        time.sleep(0.1)
 
     def _lock_screen(self) -> str:
         if not GUI_AVAILABLE:
